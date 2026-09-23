@@ -1,3 +1,4 @@
+const fs = require('fs');
 const env = require('./config/env');
 const app = require('./app');
 const sequelize = require('./config/database');
@@ -6,6 +7,8 @@ const { autoRepararTodo } = require('./startup/autoRepair');
 
 async function start() {
   try {
+    fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+
     await sequelize.authenticate();
     logger.info('✅ Conexión a MySQL establecida correctamente.');
 
