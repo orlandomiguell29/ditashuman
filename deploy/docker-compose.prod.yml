@@ -1,0 +1,77 @@
+version: "3.9"
+
+# Plantilla de producción. NO es "listo para usar tal cual": necesitas
+# completar los valores marcados con "<...>" y decidir tu propio proveedor
+# de hosting/almacenamiento/backups. Pensada para un solo servidor (Nginx +
+# backend Node + MySQL); para alta disponibilidad real conviene un MySQL
+# gestionado (RDS, Cloud SQL, etc.) en vez del contenedor de abajo.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ditash-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "<genera_una_clave_fuerte_y_guardala_en_un_gestor_de_secretos>"
+      MYSQL_DATABASE: ditash
+      MYSQL_USER: ditash_app
+      MYSQL_PASSWORD: "<genera_otra_clave_fuerte>"
+    # No se expone el puerto 3306 al host: solo el backend (misma red
+    # docker) necesita hablar con MySQL en producción.
+    expose:
+      - "3306"
+    volumes:
+      - ditash_mysql_data:/var/lib/mysql
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ditash-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env   # NUNCA commitear este archivo; ver README §4.2
+    environment:
+      NODE_ENV: production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "4000"
+    volumes:
+      # Persistencia de los documentos subidos al expediente (fuera del
+      # árbol de la imagen, para que sobrevivan a un redeploy).
+      - ditash_uploads:/app/uploads
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ditash-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf.example:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      # Certificados TLS (ver deploy/README.md — Let's Encrypt/Certbot o los
+      # que emita tu proveedor de hosting/CDN).
+      - <ruta_certificados_tls>:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+
+volumes:
+  ditash_mysql_data:
+  ditash_uploads:

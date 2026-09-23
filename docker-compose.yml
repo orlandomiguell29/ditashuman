@@ -1,0 +1,27 @@
+version: "3.9"
+
+# Entorno de desarrollo local: solo levanta MySQL. El backend y frontend se
+# ejecutan con `npm run dev` fuera de Docker para mayor velocidad de recarga.
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ditash-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_root_pass
+      MYSQL_DATABASE: ditash
+      MYSQL_USER: ditash_app
+      MYSQL_PASSWORD: cambia_esta_clave
+    ports:
+      - "3306:3306"
+    volumes:
+      - ditash_mysql_data:/var/lib/mysql
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ditash_mysql_data:
