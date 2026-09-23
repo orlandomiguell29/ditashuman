@@ -64,7 +64,7 @@ app.use('/api', apiLimiter);
 const { doubleCsrfProtection, generateToken } = doubleCsrf({
   getSecret: () => env.CSRF_SECRET,
   cookieName: env.NODE_ENV === 'production' ? '__Host-ditash.csrf' : 'ditash.csrf',
-  cookieOptions: { sameSite: 'strict', secure: env.COOKIE_SECURE, path: '/' },
+  cookieOptions: { sameSite: env.COOKIE_SAMESITE, secure: env.COOKIE_SECURE, path: '/' },
   getTokenFromRequest: (req) => req.headers['x-csrf-token'],
 });
 
