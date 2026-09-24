@@ -67,6 +67,7 @@ export default function ColaboradorAgenda() {
   const [fecha, setFecha] = useState(manana());
   const [slots, setSlots] = useState([]);
   const [cargandoSlots, setCargandoSlots] = useState(false);
+  const [enviandoCita, setEnviandoCita] = useState(false);
   const [canal, setCanal] = useState('videollamada_interna');
   const [googleConectado, setGoogleConectado] = useState(false);
   // Cuando no es null, el modal de horarios está en modo "reasignar" esta
@@ -99,7 +100,10 @@ export default function ColaboradorAgenda() {
     setCitaReagendando(null);
     setEspecialistaSeleccionado(esp);
     setFecha(manana());
-    setCanal('videollamada_interna');
+    // Google Meet es el canal por defecto cuando hay una cuenta conectada
+    // (mejor experiencia: enlace real de Meet en vez de Jitsi). Si no hay
+    // conexión, cae a Jitsi porque la opción de Meet aparece deshabilitada.
+    setCanal(googleConectado ? 'meet' : 'videollamada_interna');
     setError('');
   }
 
@@ -124,6 +128,14 @@ export default function ColaboradorAgenda() {
   }, [especialistaSeleccionado, fecha]);
 
   async function agendar(hora) {
+    // Sin este guard, dos clics seguidos sobre el mismo horario (doble clic,
+    // o un clic mientras la petición anterior todavía viaja por la red)
+    // disparaban dos POST /colaborador/citas casi simultáneos: ambos pasaban
+    // la validación de solapamiento en el backend porque ninguno de los dos
+    // había terminado de guardarse todavía cuando el otro la revisó, y el
+    // resultado eran dos citas duplicadas en el mismo horario.
+    if (enviandoCita) return;
+    setEnviandoCita(true);
     setError('');
     setMensaje('');
     const fechaHora = new Date(`${fecha}T${hora}:00`);
@@ -145,6 +157,8 @@ export default function ColaboradorAgenda() {
       cargar();
     } catch (err) {
       setError(err.response?.data?.error || (citaReagendando ? 'No fue posible reasignar la cita.' : 'No fue posible agendar la cita.'));
+    } finally {
+      setEnviandoCita(false);
     }
   }
 
@@ -292,10 +306,6 @@ export default function ColaboradorAgenda() {
             <>
               <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Modalidad de videollamada</label>
               <div className="competencies-list" style={{ marginTop: 6, marginBottom: 16 }}>
-                <label className="checkbox-label">
-                  <input type="radio" name="canal" checked={canal === 'videollamada_interna'} onChange={() => setCanal('videollamada_interna')} />
-                  Videollamada DITASH (Jitsi)
-                </label>
                 <label className="checkbox-label" title={googleConectado ? '' : 'Aún no hay una cuenta de Google conectada; contacta a tu administrador.'}>
                   <input
                     type="radio"
@@ -306,6 +316,10 @@ export default function ColaboradorAgenda() {
                   />
                   Google Meet {!googleConectado && '(no disponible todavía)'}
                 </label>
+                <label className="checkbox-label">
+                  <input type="radio" name="canal" checked={canal === 'videollamada_interna'} onChange={() => setCanal('videollamada_interna')} />
+                  Videollamada DITASH (Jitsi)
+                </label>
               </div>
             </>
           )}
@@ -315,7 +329,9 @@ export default function ColaboradorAgenda() {
           {!cargandoSlots && slots.length > 0 && (
             <div className="competencies-list">
               {slots.map((hora) => (
-                <button key={hora} type="button" className="btn-xs" onClick={() => agendar(hora)}>{hora}</button>
+                <button key={hora} type="button" className="btn-xs" disabled={enviandoCita} onClick={() => agendar(hora)}>
+                  {enviandoCita ? '...' : hora}
+                </button>
               ))}
             </div>
           )}

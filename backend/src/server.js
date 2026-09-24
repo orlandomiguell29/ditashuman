@@ -1,3 +1,4 @@
+process.env.TZ = 'America/Bogota';
 const fs = require('fs');
 const env = require('./config/env');
 const app = require('./app');
