@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../api/axiosClient';
 import EnlaceReunion from '../../components/EnlaceReunion';
 import Modal from '../../components/Modal';
-import { IconTrash, IconCheck, IconCheckCircle, IconBan, IconRefresh, IconEdit, IconDownload, IconX } from '../../components/icons';
+import { IconTrash, IconCheck, IconCheckCircle, IconBan, IconRefresh, IconEdit, IconDownload, IconX, IconClipboardList } from '../../components/icons';
 import Paginator from '../../components/Paginator';
 import { usePaginacion } from '../../hooks/usePaginacion';
 import EstadoBadge from '../../components/EstadoBadge';
@@ -75,6 +75,30 @@ export default function EspecialistaAgenda() {
   const [nuevaFecha, setNuevaFecha] = useState('');
   const [nuevaHora, setNuevaHora] = useState('');
   const [guardandoReagendar, setGuardandoReagendar] = useState(false);
+
+  // Historia clínica: se puede abrir desde cualquier cita, en cualquier
+  // estado (pendiente/confirmada cubre diligenciarla EN VIVO durante la
+  // videollamada; completada cubre hacerlo después). `hcCita` guarda la
+  // cita sobre la que está abierto el modal; `hcDatos` trae lo que ya
+  // devolvió el backend (la nota actual, si existe, más el historial de
+  // sesiones previas con ese mismo paciente); `hcForm` son los campos del
+  // formulario, que se inicializan con lo ya guardado (o vacíos si es la
+  // primera vez).
+  const [hcCita, setHcCita] = useState(null);
+  const [hcDatos, setHcDatos] = useState(null);
+  const [hcCargando, setHcCargando] = useState(false);
+  const [hcGuardando, setHcGuardando] = useState(false);
+  const [hcError, setHcError] = useState('');
+  const HC_FORM_VACIO = {
+    motivoConsulta: '',
+    resumenSesion: '',
+    analisisDiagnostico: '',
+    planIntervencion: '',
+    recomendaciones: '',
+    nivelRiesgo: 'ninguno',
+    proximaCitaRecomendada: '',
+  };
+  const [hcForm, setHcForm] = useState(HC_FORM_VACIO);
 
   // Paginación de "Mis citas" (en el cliente): la agenda de un especialista
   // activo crece indefinidamente con el historial de citas.
@@ -235,6 +259,61 @@ export default function EspecialistaAgenda() {
       setError(err.response?.data?.error || 'No fue posible reasignar la cita.');
     } finally {
       setGuardandoReagendar(false);
+    }
+  }
+
+  async function abrirHistoriaClinica(cita) {
+    setHcError('');
+    setHcCita(cita);
+    setHcDatos(null);
+    setHcForm(HC_FORM_VACIO);
+    setHcCargando(true);
+    try {
+      const { data: res } = await api.get(`/especialista/citas/${cita.id}/historia-clinica`);
+      setHcDatos(res.data);
+      const hc = res.data.historiaClinica;
+      if (hc) {
+        setHcForm({
+          motivoConsulta: hc.motivo_consulta || '',
+          resumenSesion: hc.resumen_sesion || '',
+          analisisDiagnostico: hc.analisis_diagnostico || '',
+          planIntervencion: hc.plan_intervencion || '',
+          recomendaciones: hc.recomendaciones || '',
+          nivelRiesgo: hc.nivel_riesgo || 'ninguno',
+          proximaCitaRecomendada: hc.proxima_cita_recomendada || '',
+        });
+      }
+    } catch (err) {
+      setHcError(err.response?.data?.error || 'No fue posible cargar la historia clínica.');
+    } finally {
+      setHcCargando(false);
+    }
+  }
+
+  function cerrarHistoriaClinica() {
+    setHcCita(null);
+    setHcDatos(null);
+    setHcError('');
+  }
+
+  async function guardarHistoriaClinica(estado) {
+    if (estado === 'finalizada' && !window.confirm('Una vez finalizada, esta historia clínica queda bloqueada y no podrás editarla. ¿Finalizar de todas formas?')) {
+      return;
+    }
+    setHcError('');
+    setHcGuardando(true);
+    try {
+      const { data: res } = await api.put(`/especialista/citas/${hcCita.id}/historia-clinica`, {
+        ...hcForm,
+        proximaCitaRecomendada: hcForm.proximaCitaRecomendada || null,
+        estado,
+      });
+      setHcDatos((prev) => ({ ...prev, historiaClinica: res.data }));
+      if (estado === 'finalizada') cerrarHistoriaClinica();
+    } catch (err) {
+      setHcError(err.response?.data?.error || 'No fue posible guardar la historia clínica.');
+    } finally {
+      setHcGuardando(false);
     }
   }
 
@@ -407,6 +486,9 @@ export default function EspecialistaAgenda() {
               </div>
             </div>
             <div className="cita-card-acciones">
+              <button className="btn-icon-only" data-tooltip="Historia clínica" onClick={() => abrirHistoriaClinica(c)}>
+                <IconClipboardList />
+              </button>
               {c.estado === 'pendiente' && (
                 <button className="btn-icon-only" data-tooltip="Confirmar" onClick={() => confirmar(c.id)}>
                   <IconCheck />
@@ -462,6 +544,115 @@ export default function EspecialistaAgenda() {
               {guardandoReagendar ? 'Guardando…' : 'Guardar nueva fecha/hora'}
             </button>
           </form>
+        </Modal>
+      )}
+
+      {hcCita && (
+        <Modal titulo={`Historia clínica — ${hcCita.Colaborador?.Usuario?.nombre || 'Paciente'}`} onClose={cerrarHistoriaClinica}>
+          {hcError && <div className="alert-error">{hcError}</div>}
+          {hcCargando && <p>Cargando…</p>}
+          {!hcCargando && hcDatos && (
+            <>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>
+                Cita del {new Date(hcCita.fecha_hora).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}
+                {hcDatos.historiaClinica?.estado === 'finalizada' && (
+                  <> · <strong style={{ color: 'var(--exito, green)' }}>Finalizada el {new Date(hcDatos.historiaClinica.finalizada_en).toLocaleDateString('es-CO')}</strong></>
+                )}
+              </p>
+
+              {hcDatos.historiaClinica?.estado === 'finalizada' ? (
+                // Finalizada = solo lectura. Normativa de historia clínica:
+                // una nota cerrada no se reescribe en silencio (ver comentario
+                // en el modelo HistoriaClinica, backend).
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <label>Motivo de consulta</label>
+                  <p>{hcForm.motivoConsulta || '—'}</p>
+                  <label>Resumen de la sesión</label>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{hcForm.resumenSesion || '—'}</p>
+                  <label>Análisis / impresión diagnóstica</label>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{hcForm.analisisDiagnostico || '—'}</p>
+                  <label>Plan de intervención</label>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{hcForm.planIntervencion || '—'}</p>
+                  <label>Recomendaciones</label>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{hcForm.recomendaciones || '—'}</p>
+                  <label>Nivel de riesgo</label>
+                  <p>{hcForm.nivelRiesgo}</p>
+                </div>
+              ) : (
+                <div className="form-grid" style={{ marginTop: 10 }}>
+                  <label>Motivo de consulta</label>
+                  <input
+                    type="text"
+                    maxLength={500}
+                    value={hcForm.motivoConsulta}
+                    onChange={(e) => setHcForm({ ...hcForm, motivoConsulta: e.target.value })}
+                  />
+                  <label>Resumen de la sesión</label>
+                  <textarea
+                    rows={4}
+                    value={hcForm.resumenSesion}
+                    onChange={(e) => setHcForm({ ...hcForm, resumenSesion: e.target.value })}
+                  />
+                  <label>Análisis / impresión diagnóstica</label>
+                  <textarea
+                    rows={3}
+                    value={hcForm.analisisDiagnostico}
+                    onChange={(e) => setHcForm({ ...hcForm, analisisDiagnostico: e.target.value })}
+                  />
+                  <label>Plan de intervención</label>
+                  <textarea
+                    rows={3}
+                    value={hcForm.planIntervencion}
+                    onChange={(e) => setHcForm({ ...hcForm, planIntervencion: e.target.value })}
+                  />
+                  <label>Recomendaciones</label>
+                  <textarea
+                    rows={3}
+                    value={hcForm.recomendaciones}
+                    onChange={(e) => setHcForm({ ...hcForm, recomendaciones: e.target.value })}
+                  />
+                  <label>Nivel de riesgo percibido</label>
+                  <select value={hcForm.nivelRiesgo} onChange={(e) => setHcForm({ ...hcForm, nivelRiesgo: e.target.value })}>
+                    <option value="ninguno">Ninguno</option>
+                    <option value="bajo">Bajo</option>
+                    <option value="medio">Medio</option>
+                    <option value="alto">Alto</option>
+                  </select>
+                  <label>Próxima cita recomendada (opcional)</label>
+                  <input
+                    type="date"
+                    value={hcForm.proximaCitaRecomendada || ''}
+                    onChange={(e) => setHcForm({ ...hcForm, proximaCitaRecomendada: e.target.value })}
+                  />
+
+                  <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                    <button type="button" className="btn-secondary" disabled={hcGuardando} onClick={() => guardarHistoriaClinica('borrador')}>
+                      {hcGuardando ? 'Guardando…' : 'Guardar borrador'}
+                    </button>
+                    <button type="button" className="btn-primary" disabled={hcGuardando} onClick={() => guardarHistoriaClinica('finalizada')}>
+                      {hcGuardando ? 'Guardando…' : 'Finalizar historia clínica'}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Puedes guardar como borrador cuantas veces quieras (incluso durante la videollamada) y volver después. Al finalizar, queda bloqueada para edición.
+                  </p>
+                </div>
+              )}
+
+              {hcDatos.historialPrevio?.length > 0 && (
+                <div style={{ marginTop: 24, borderTop: '1px solid var(--gray-border)', paddingTop: 14 }}>
+                  <h4 style={{ marginBottom: 8 }}>Historial previo con este paciente</h4>
+                  {hcDatos.historialPrevio.map((h) => (
+                    <div key={h.id} style={{ marginBottom: 12, fontSize: 13 }}>
+                      <strong>{h.Cita?.fecha_hora ? new Date(h.Cita.fecha_hora).toLocaleDateString('es-CO') : ''}</strong>
+                      {h.motivo_consulta && <span> — {h.motivo_consulta}</span>}
+                      {h.analisis_diagnostico && <p style={{ color: 'var(--text-muted)', margin: '2px 0 0' }}>{h.analisis_diagnostico}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </Modal>
       )}
     </div>

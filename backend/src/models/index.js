@@ -413,6 +413,43 @@ const ExpedienteDocumento = sequelize.define('ExpedienteDocumento', {
   subido_por: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
 }, { tableName: 'expediente_documentos', updatedAt: false });
 
+// Historia clínica de una sesión: UNA por cita (1:1), diligenciada por el
+// propio especialista durante la videoconsulta o después de ella. No es un
+// historial médico hospitalario completo — es la nota de sesión propia de
+// un servicio de bienestar corporativo (psicología, coaching, nutrición,
+// etc.): motivo de consulta, lo tratado en sesión, impresión diagnóstica,
+// plan y recomendaciones. `colaborador_id`/`especialista_id` se guardan
+// denormalizados (además de `cita_id`) para poder listar el historial de un
+// paciente sin tener que unir contra `citas` en cada consulta — mismo
+// patrón que `Comision.especialista_id` junto a `Comision.cita_id`.
+//
+// `estado`: 'borrador' mientras el especialista la está escribiendo (incluso
+// en vivo, durante la llamada) — se puede seguir editando y guardando cuantas
+// veces haga falta. 'finalizada' la deja de solo lectura (ver
+// especialistaController.guardarHistoriaClinica, que rechaza cualquier
+// edición posterior salvo por SUPER_ADMIN): una historia clínica firmada no
+// se reescribe en silencio, se protege igual que exige la normativa
+// colombiana de historia clínica (no alterabilidad del registro finalizado).
+const HistoriaClinica = sequelize.define('HistoriaClinica', {
+  id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
+  cita_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false, unique: true },
+  colaborador_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+  especialista_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+  motivo_consulta: DataTypes.STRING(500),
+  resumen_sesion: DataTypes.TEXT,
+  analisis_diagnostico: DataTypes.TEXT,
+  plan_intervencion: DataTypes.TEXT,
+  recomendaciones: DataTypes.TEXT,
+  // Nivel de riesgo percibido en la sesión (ej. crisis emocional, burnout
+  // severo) — queda registrado en la nota aunque hoy no dispare ninguna
+  // alerta automática; es la base para poder agregar esa alerta más
+  // adelante sin tener que rediseñar el modelo de datos.
+  nivel_riesgo: { type: DataTypes.ENUM('ninguno', 'bajo', 'medio', 'alto'), defaultValue: 'ninguno' },
+  proxima_cita_recomendada: DataTypes.DATEONLY,
+  estado: { type: DataTypes.ENUM('borrador', 'finalizada'), defaultValue: 'borrador' },
+  finalizada_en: DataTypes.DATE,
+}, { tableName: 'historias_clinicas' });
+
 const Notificacion = sequelize.define('Notificacion', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   usuario_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
@@ -491,6 +528,11 @@ EncuestaRespuesta.belongsTo(EncuestaPregunta, { foreignKey: 'pregunta_id' });
 
 ExpedienteDocumento.belongsTo(Colaborador, { foreignKey: 'colaborador_id' });
 
+Cita.hasOne(HistoriaClinica, { foreignKey: 'cita_id' });
+HistoriaClinica.belongsTo(Cita, { foreignKey: 'cita_id' });
+HistoriaClinica.belongsTo(Colaborador, { foreignKey: 'colaborador_id' });
+HistoriaClinica.belongsTo(Especialista, { foreignKey: 'especialista_id' });
+
 // Guarda UNA integración de Google Calendar/Meet a nivel de toda la
 // plataforma (no por especialista): el refresh token de la cuenta de
 // Google conectada por un SUPER_ADMIN desde Admin > Integraciones. Se
@@ -536,6 +578,7 @@ module.exports = {
   EncuestaPregunta,
   EncuestaRespuesta,
   ExpedienteDocumento,
+  HistoriaClinica,
   Notificacion,
   GoogleIntegracion,
 };

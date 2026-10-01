@@ -14,6 +14,7 @@ const MODULOS = [
   'okrs',
   'clima',
   'expedientes',
+  'historias_clinicas',
   'comisiones',
   'categorias',
   'auditoria',

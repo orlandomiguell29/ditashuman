@@ -1,6 +1,6 @@
 const { z } = require('zod');
 const { Op } = require('sequelize');
-const { Especialista, EspecialistaHorario, Cita, Comision, Colaborador, Usuario } = require('../models');
+const { Especialista, EspecialistaHorario, Cita, Comision, Colaborador, Usuario, HistoriaClinica } = require('../models');
 const { HttpError } = require('../middlewares/errorHandler');
 const { registrarAuditoria } = require('../middlewares/audit');
 const { existeSolapamiento, expirarCitasVencidas } = require('../utils/citas');
@@ -259,6 +259,126 @@ async function marcarCompletada(req, res, next) {
   }
 }
 
+// Busca la cita y, de paso, verifica que pertenezca a ESTE especialista —
+// nunca se confía en un `cita_id` del body/params sin este chequeo, o
+// cualquier especialista podría leer/editar la historia clínica de un
+// paciente ajeno con solo adivinar o enumerar IDs de cita.
+async function miCitaConPaciente(especialistaId, citaId) {
+  const cita = await Cita.findOne({
+    where: { id: citaId, especialista_id: especialistaId },
+    include: [{ model: Colaborador, include: [{ model: Usuario, attributes: ['nombre', 'email'] }] }],
+  });
+  if (!cita) throw new HttpError(404, 'Cita no encontrada.');
+  return cita;
+}
+
+// Trae la historia clínica de una cita puntual (o null si el especialista
+// todavía no ha diligenciado nada), más el historial de sesiones PREVIAS
+// finalizadas con ese mismo paciente — continuidad de la atención: antes de
+// escribir la nota de hoy, el especialista puede ver qué se trató antes.
+// Nunca se cruzan notas de OTRO especialista (cada profesional ve solo lo
+// que él mismo escribió con ese colaborador), ni se mezclan con el módulo
+// de RRHH: este endpoint vive bajo /especialista y exige el permiso
+// `historias_clinicas.leer`, que ADMIN_EMPRESA y COLABORADOR nunca tienen
+// (ver db/seed.js).
+async function historiaClinica(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const cita = await miCitaConPaciente(especialista.id, req.params.id);
+
+    const [actual, historialPrevio] = await Promise.all([
+      HistoriaClinica.findOne({ where: { cita_id: cita.id } }),
+      HistoriaClinica.findAll({
+        where: {
+          colaborador_id: cita.colaborador_id,
+          especialista_id: especialista.id,
+          estado: 'finalizada',
+          cita_id: { [Op.ne]: cita.id },
+        },
+        include: [{ model: Cita, attributes: ['fecha_hora', 'motivo'] }],
+        order: [['finalizada_en', 'DESC']],
+        limit: 10,
+      }),
+    ]);
+
+    res.json({ data: { cita, historiaClinica: actual, historialPrevio } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const historiaClinicaSchema = z.object({
+  body: z
+    .object({
+      motivoConsulta: z.string().max(500).optional(),
+      resumenSesion: z.string().max(10000).optional(),
+      analisisDiagnostico: z.string().max(10000).optional(),
+      planIntervencion: z.string().max(10000).optional(),
+      recomendaciones: z.string().max(10000).optional(),
+      nivelRiesgo: z.enum(['ninguno', 'bajo', 'medio', 'alto']).optional(),
+      proximaCitaRecomendada: z.string().date().optional().nullable(),
+      // 'borrador' guarda y deja seguir editando (se puede llamar este mismo
+      // endpoint cuantas veces haga falta, incluso en vivo durante la
+      // videollamada). 'finalizada' guarda y además cierra la nota — a
+      // partir de ahí este mismo endpoint la rechaza (ver abajo).
+      estado: z.enum(['borrador', 'finalizada']).default('borrador'),
+    })
+    .strict(),
+  query: z.any(),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+});
+
+// Crea o actualiza (upsert) la historia clínica de una cita. Solo el
+// especialista dueño de la cita puede escribirla, y solo mientras siga en
+// 'borrador': una historia 'finalizada' queda de solo lectura, igual que
+// exige la normativa de historia clínica en Colombia (no se reescribe en
+// silencio un registro ya cerrado) — si de verdad hace falta corregirla,
+// eso es una operación administrativa aparte, no un PUT silencioso más.
+async function guardarHistoriaClinica(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const cita = await miCitaConPaciente(especialista.id, req.params.id);
+
+    let hc = await HistoriaClinica.findOne({ where: { cita_id: cita.id } });
+    if (hc && hc.estado === 'finalizada') {
+      throw new HttpError(409, 'Esta historia clínica ya fue finalizada y no puede editarse.');
+    }
+
+    const datos = {
+      motivo_consulta: req.body.motivoConsulta,
+      resumen_sesion: req.body.resumenSesion,
+      analisis_diagnostico: req.body.analisisDiagnostico,
+      plan_intervencion: req.body.planIntervencion,
+      recomendaciones: req.body.recomendaciones,
+      nivel_riesgo: req.body.nivelRiesgo,
+      proxima_cita_recomendada: req.body.proximaCitaRecomendada || null,
+      estado: req.body.estado,
+      finalizada_en: req.body.estado === 'finalizada' ? new Date() : null,
+    };
+
+    if (hc) {
+      await hc.update(datos);
+    } else {
+      hc = await HistoriaClinica.create({
+        cita_id: cita.id,
+        colaborador_id: cita.colaborador_id,
+        especialista_id: especialista.id,
+        ...datos,
+      });
+    }
+
+    await registrarAuditoria({
+      req,
+      accion: req.body.estado === 'finalizada' ? 'finalizar_historia_clinica' : 'guardar_historia_clinica_borrador',
+      entidad: 'historias_clinicas',
+      entidadId: hc.id,
+    });
+    res.json({ data: hc });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function ingresos(req, res, next) {
   try {
     const especialista = await miEspecialista(req.user.id);
@@ -432,10 +552,13 @@ module.exports = {
   cancelarCita,
   reagendarCita,
   marcarCompletada,
+  historiaClinica,
+  guardarHistoriaClinica,
   ingresos,
   exportarIngresos,
   exportarCitas,
   horarioSchema,
   reagendarCitaSchema,
   actualizarDuracionSchema,
+  historiaClinicaSchema,
 };

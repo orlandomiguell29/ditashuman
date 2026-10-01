@@ -85,7 +85,19 @@ async function seedRolesYPermisos() {
 
   await colaborador.setPermisos(porModulo(['colaboradores', 'citas', 'cursos', 'expedientes'], ['leer', 'crear']));
 
-  await especialista.setPermisos(porModulo(['especialistas', 'citas', 'comisiones'], ['leer', 'actualizar', 'exportar']));
+  await especialista.setPermisos([
+    ...porModulo(['especialistas', 'citas', 'comisiones'], ['leer', 'actualizar', 'exportar']),
+    // Historia clínica: solo el propio especialista la crea/edita/lee (de
+    // SUS pacientes, filtrado en el controlador por especialista_id — ver
+    // especialistaController.historiaClinica). A propósito NO se le da
+    // 'exportar' ni 'inactivar': nada de descargas masivas de datos clínicos
+    // todavía. A propósito TAMPOCO se le da nada de este módulo a
+    // ADMIN_EMPRESA ni a COLABORADOR más abajo: es información de salud
+    // confidencial — el empleador nunca debe poder leer el contenido
+    // clínico de una sesión, solo que la cita ocurrió (eso sigue viviendo
+    // en `citas`, un módulo aparte).
+    ...porModulo(['historias_clinicas'], ['crear', 'leer', 'actualizar']),
+  ]);
 
   return { superAdmin, adminEmpresa, colaborador, especialista };
 }
