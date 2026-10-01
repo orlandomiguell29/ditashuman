@@ -53,7 +53,11 @@ export default function DataTable({
               {columns.map((c) => (
                 <td key={c.key}>{c.render ? c.render(row) : String(row[c.key] ?? '')}</td>
               ))}
-              {acciones && <td className="acciones-cell">{acciones(row)}</td>}
+              {acciones && (
+                <td className="acciones-td">
+                  <div className="acciones-cell">{acciones(row)}</div>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

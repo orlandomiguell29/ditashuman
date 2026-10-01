@@ -336,6 +336,12 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--primary); widt
    mantienen siempre en una sola fila (`flex-wrap: nowrap`) y, si de verdad
    no caben (pantallas angostas o muchas acciones), `.table-wrapper` absorbe
    el desborde con scroll horizontal en toda la tabla. */
+/* El flex va en un <div> DENTRO de la celda, nunca en el <td>: un <td> con
+   `display: flex` deja de comportarse como celda de tabla, la columna se
+   desalinea y la fila se sale del ancho (aparecía una barra de scroll
+   horizontal aunque el contenido cupiera). `width: 1%` hace que la columna
+   de acciones ocupe solo lo que necesitan sus botones. */
+.acciones-td { width: 1%; white-space: nowrap; }
 .acciones-cell { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; white-space: nowrap; }
 .acciones-cell .btn-xs { margin: 0; }
 .empty-state { text-align: center; color: var(--text-muted); padding: 40px; }
