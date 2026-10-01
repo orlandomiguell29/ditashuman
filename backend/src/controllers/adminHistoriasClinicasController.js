@@ -21,7 +21,7 @@ async function listar(req, res, next) {
     const historias = await HistoriaClinica.findAll({
       where: { estado: ['finalizada', 'anulada'] },
       include: [
-        { model: Cita, attributes: ['fecha_hora'] },
+        { model: Cita, as: 'Cita', attributes: ['fecha_hora'] },
         { model: Colaborador, include: [{ model: Usuario, attributes: ['nombre'] }] },
         { model: Especialista, include: [{ model: Usuario, attributes: ['nombre'] }] },
       ],

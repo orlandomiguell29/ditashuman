@@ -556,7 +556,10 @@ EncuestaRespuesta.belongsTo(EncuestaPregunta, { foreignKey: 'pregunta_id' });
 ExpedienteDocumento.belongsTo(Colaborador, { foreignKey: 'colaborador_id' });
 
 Cita.hasOne(HistoriaClinica, { foreignKey: 'cita_id' });
-HistoriaClinica.belongsTo(Cita, { foreignKey: 'cita_id' });
+// `as: 'Cita'` explícito: sin él, Sequelize "singulariza" el nombre del
+// modelo con reglas del inglés y 'Cita' termina como 'Citum' (misma regla
+// que data -> datum), así que `historia.Cita` llegaba siempre vacío.
+HistoriaClinica.belongsTo(Cita, { foreignKey: 'cita_id', as: 'Cita' });
 HistoriaClinica.belongsTo(Colaborador, { foreignKey: 'colaborador_id' });
 HistoriaClinica.belongsTo(Especialista, { foreignKey: 'especialista_id' });
 HistoriaClinica.hasMany(HistoriaClinicaAdjunto, { foreignKey: 'historia_clinica_id' });

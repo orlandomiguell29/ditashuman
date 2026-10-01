@@ -317,7 +317,7 @@ async function historiaClinica(req, res, next) {
           estado: 'finalizada',
           cita_id: { [Op.ne]: cita.id },
         },
-        include: [{ model: Cita, attributes: ['fecha_hora', 'motivo'] }],
+        include: [{ model: Cita, as: 'Cita', attributes: ['fecha_hora', 'motivo'] }],
         order: [['finalizada_en', 'DESC']],
         limit: 10,
       }),
@@ -550,7 +550,7 @@ async function descargarHistorialConsolidadoPdf(req, res, next) {
 
     const sesiones = await HistoriaClinica.findAll({
       where: { colaborador_id: colaborador.id, especialista_id: especialista.id, estado: 'finalizada' },
-      include: [{ model: Cita, attributes: ['fecha_hora'] }],
+      include: [{ model: Cita, as: 'Cita', attributes: ['fecha_hora'] }],
       order: [['finalizada_en', 'ASC']],
     });
     if (sesiones.length === 0) throw new HttpError(404, 'Este paciente todavía no tiene historias clínicas finalizadas con vos.');
