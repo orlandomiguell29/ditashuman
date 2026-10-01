@@ -564,3 +564,73 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--primary); widt
 
   .login-card { padding: 28px 22px; }
 }
+
+/* ===== Historial Clínico (especialista/HistorialClinico.jsx) =====
+   Layout de dos paneles tipo "expediente": lista de pacientes a la
+   izquierda (con buscador y avatar de iniciales) y ficha del paciente a la
+   derecha (resumen en cifras + línea de sesiones). Clases propias en vez de
+   reutilizar .pid-box/.btn-secondary: esas son genéricas (degradado,
+   botón negro de ancho completo) y hacían que esta vista se viera
+   improvisada. */
+.hc-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; margin-top: 18px; }
+.hc-panel { background: var(--white); border: 1px solid var(--gray-border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.hc-panel-header { padding: 16px 18px; border-bottom: 1px solid var(--gray-border); }
+.hc-panel-header h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+.hc-buscador { position: relative; margin-top: 10px; }
+.hc-buscador input {
+  width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--gray-border); border-radius: var(--radius-sm);
+  font-size: 14px; background: var(--gray-bg); transition: border-color var(--transition), background var(--transition);
+}
+.hc-buscador input:focus { outline: none; border-color: var(--primary); background: var(--white); }
+.hc-buscador svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+.hc-lista-pacientes { list-style: none; max-height: 560px; overflow-y: auto; padding: 8px; }
+.hc-paciente {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid transparent;
+  border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: left; transition: background var(--transition), border-color var(--transition);
+}
+.hc-paciente:hover { background: var(--gray-bg); }
+.hc-paciente.activo { background: var(--primary-light); border-color: #c7d6f3; }
+.hc-avatar {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--primary); color: var(--white); font-weight: 700; font-size: 14px; letter-spacing: 0.02em;
+}
+.hc-avatar.grande { width: 52px; height: 52px; font-size: 18px; }
+.hc-paciente-nombre { font-weight: 600; color: var(--dark); font-size: 14px; }
+.hc-paciente-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.hc-vacio { padding: 48px 24px; text-align: center; color: var(--text-muted); }
+.hc-vacio svg { width: 40px; height: 40px; color: #cbd5e1; margin-bottom: 10px; }
+.hc-ficha-header { display: flex; align-items: center; gap: 14px; padding: 20px 22px; border-bottom: 1px solid var(--gray-border); flex-wrap: wrap; }
+.hc-ficha-header h3 { font-size: 20px; }
+.hc-ficha-header .hc-ficha-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.hc-ficha-header .btn-export { margin-left: auto; }
+.hc-ficha-header .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
+.hc-resumen { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--gray-border); }
+.hc-resumen > div { padding: 14px 22px; border-right: 1px solid var(--gray-border); }
+.hc-resumen > div:last-child { border-right: none; }
+.hc-resumen span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+.hc-resumen strong { display: block; font-size: 20px; color: var(--dark); margin-top: 4px; }
+.hc-sesiones { list-style: none; padding: 6px 0; }
+.hc-sesion { display: grid; grid-template-columns: 150px 1fr auto; gap: 16px; align-items: center; padding: 14px 22px; border-bottom: 1px solid var(--gray-bg-soft); }
+.hc-sesion:last-child { border-bottom: none; }
+.hc-sesion-fecha strong { display: block; font-size: 14px; color: var(--dark); }
+.hc-sesion-fecha span { font-size: 12px; color: var(--text-muted); }
+.hc-sesion-estados { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.hc-sesion-nota { font-size: 12px; color: var(--text-muted); }
+.btn-hc {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--gray-border); background: var(--white); color: var(--primary); cursor: pointer; white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
+}
+.btn-hc:hover { background: var(--primary-light); border-color: #c7d6f3; }
+.btn-hc svg { width: 15px; height: 15px; }
+
+@media (max-width: 1100px) {
+  .hc-layout { grid-template-columns: 1fr; }
+  .hc-lista-pacientes { max-height: 260px; }
+}
+@media (max-width: 640px) {
+  .hc-resumen { grid-template-columns: repeat(2, 1fr); }
+  .hc-resumen > div:nth-child(2) { border-right: none; }
+  .hc-sesion { grid-template-columns: 1fr; gap: 8px; }
+  .hc-ficha-header .btn-export { margin-left: 0; width: 100%; justify-content: center; }
+}

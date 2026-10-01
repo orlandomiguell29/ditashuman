@@ -65,6 +65,18 @@ const PLANTILLAS_POR_CATEGORIA = {
   },
 };
 
+// Las descargas usan responseType 'blob', así que los errores del backend
+// también llegan como blob: se leen para mostrar el mensaje real.
+async function mensajeDeErrorBlob(err, porDefecto) {
+  try {
+    const data = err.response?.data;
+    if (data instanceof Blob) return JSON.parse(await data.text()).error || porDefecto;
+    return data?.error || porDefecto;
+  } catch {
+    return porDefecto;
+  }
+}
+
 function formatearTamano(bytes) {
   if (!bytes) return '';
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -205,8 +217,8 @@ export default function HistoriaClinicaModal({ cita, onClose }) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch {
-      setError('No fue posible descargar el PDF de la historia clínica.');
+    } catch (err) {
+      setError(await mensajeDeErrorBlob(err, 'No fue posible descargar el PDF de la historia clínica.'));
     } finally {
       setDescargandoPdf(false);
     }
@@ -245,8 +257,8 @@ export default function HistoriaClinicaModal({ cita, onClose }) {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch {
-      setError('No fue posible descargar el adjunto.');
+    } catch (err) {
+      setError(await mensajeDeErrorBlob(err, 'No fue posible descargar el adjunto.'));
     }
   }
 

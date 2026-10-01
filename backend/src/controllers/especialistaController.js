@@ -33,7 +33,13 @@ async function agenda(req, res, next) {
       EspecialistaHorario.findAll({ where: { especialista_id: especialista.id } }),
       Cita.findAll({
         where: { especialista_id: especialista.id },
-        include: [{ model: Colaborador, include: [{ model: Usuario, attributes: ['nombre'] }] }],
+        include: [
+          { model: Colaborador, include: [{ model: Usuario, attributes: ['nombre'] }] },
+          // Solo id + estado de la historia clínica (nunca su contenido):
+          // lo usa el menú "Historial Clínico" para mostrar si cada sesión
+          // ya tiene nota (borrador/finalizada/anulada) sin abrirla una por una.
+          { model: HistoriaClinica, attributes: ['id', 'estado'], required: false },
+        ],
         order: [['fecha_hora', 'ASC']],
       }),
     ]);
