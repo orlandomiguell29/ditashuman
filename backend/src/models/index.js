@@ -112,6 +112,12 @@ const CategoriaItem = sequelize.define('CategoriaItem', {
   orden: { type: DataTypes.SMALLINT.UNSIGNED, defaultValue: 0 },
 }, { tableName: 'categoria_items', timestamps: false });
 
+// `name` explícito: Sequelize nombra las relaciones "singularizando" el
+// nombre del modelo con reglas del inglés, y los nombres terminados en -ta
+// los convierte como si fueran latín (data -> datum): 'Cita' quedaba como
+// 'Citum' y 'Especialista' como 'Especialistum'. Por eso `cita.Especialista`
+// y `historia.Cita` llegaban vacíos al frontend (nombre del especialista en
+// "Mis citas" del colaborador, fecha de sesión en historias clínicas, etc.).
 const Especialista = sequelize.define('Especialista', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
   usuario_id: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false, unique: true },
@@ -129,7 +135,10 @@ const Especialista = sequelize.define('Especialista', {
   bio: DataTypes.TEXT,
   verificado: { type: DataTypes.BOOLEAN, defaultValue: false },
   activo: { type: DataTypes.BOOLEAN, defaultValue: true },
-}, { tableName: 'especialistas' });
+}, {
+  tableName: 'especialistas',
+  name: { singular: 'Especialista', plural: 'Especialistas' },
+});
 
 const EspecialistaHorario = sequelize.define('EspecialistaHorario', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
@@ -162,7 +171,10 @@ const Cita = sequelize.define('Cita', {
   paga_colaborador: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
   motivo: DataTypes.STRING(255),
   notas_privadas: DataTypes.TEXT,
-}, { tableName: 'citas' });
+}, {
+  tableName: 'citas',
+  name: { singular: 'Cita', plural: 'Citas' },
+});
 
 const Comision = sequelize.define('Comision', {
   id: { type: DataTypes.BIGINT.UNSIGNED, primaryKey: true, autoIncrement: true },
