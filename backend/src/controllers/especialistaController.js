@@ -1,10 +1,23 @@
+const fs = require('fs');
+const path = require('path');
 const { z } = require('zod');
 const { Op } = require('sequelize');
-const { Especialista, EspecialistaHorario, Cita, Comision, Colaborador, Usuario, HistoriaClinica } = require('../models');
+const {
+  Especialista,
+  EspecialistaHorario,
+  Cita,
+  Comision,
+  Colaborador,
+  Usuario,
+  HistoriaClinica,
+  HistoriaClinicaAdjunto,
+  CategoriaBienestar,
+} = require('../models');
 const { HttpError } = require('../middlewares/errorHandler');
 const { registrarAuditoria } = require('../middlewares/audit');
 const { existeSolapamiento, expirarCitasVencidas } = require('../utils/citas');
 const { toCsv, toXlsxBuffer } = require('../utils/exporter');
+const { generarHistoriaClinicaPdf, generarHistoriaClinicaConsolidadaPdf } = require('../utils/historiaClinicaPdf');
 
 async function miEspecialista(usuarioId) {
   const especialista = await Especialista.findOne({ where: { usuario_id: usuarioId } });
@@ -286,8 +299,11 @@ async function historiaClinica(req, res, next) {
     const especialista = await miEspecialista(req.user.id);
     const cita = await miCitaConPaciente(especialista.id, req.params.id);
 
-    const [actual, historialPrevio] = await Promise.all([
-      HistoriaClinica.findOne({ where: { cita_id: cita.id } }),
+    const [actual, historialPrevio, categoria] = await Promise.all([
+      HistoriaClinica.findOne({
+        where: { cita_id: cita.id },
+        include: [{ model: HistoriaClinicaAdjunto, where: { activo: true }, required: false }],
+      }),
       HistoriaClinica.findAll({
         where: {
           colaborador_id: cita.colaborador_id,
@@ -299,9 +315,21 @@ async function historiaClinica(req, res, next) {
         order: [['finalizada_en', 'DESC']],
         limit: 10,
       }),
+      especialista.categoria_id ? CategoriaBienestar.findByPk(especialista.categoria_id, { attributes: ['codigo', 'titulo'] }) : null,
     ]);
 
-    res.json({ data: { cita, historiaClinica: actual, historialPrevio } });
+    res.json({
+      data: {
+        cita,
+        historiaClinica: actual,
+        historialPrevio,
+        // La plantilla de campos que arma el frontend (etiquetas "clínicas"
+        // vs. "de acompañamiento") depende de a qué categoría pertenece el
+        // especialista, nunca de un campo nuevo en la propia nota — así no
+        // hace falta tocar el modelo ni migrar nada por este ajuste.
+        especialistaCategoria: categoria?.codigo || null,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -343,6 +371,9 @@ async function guardarHistoriaClinica(req, res, next) {
     if (hc && hc.estado === 'finalizada') {
       throw new HttpError(409, 'Esta historia clínica ya fue finalizada y no puede editarse.');
     }
+    if (hc && hc.estado === 'anulada') {
+      throw new HttpError(409, 'Esta historia clínica fue anulada por un administrador y no puede editarse.');
+    }
 
     const datos = {
       motivo_consulta: req.body.motivoConsulta,
@@ -374,6 +405,164 @@ async function guardarHistoriaClinica(req, res, next) {
       entidadId: hc.id,
     });
     res.json({ data: hc });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Descarga en PDF la nota clínica de UNA cita puntual (no el historial
+// completo del paciente, para no exponer de más en un solo archivo que
+// pueda terminar impreso o reenviado). Se regenera en cada solicitud a
+// partir de lo que ya está en la base de datos — igual criterio que
+// descargarCertificado (colaboradorController): nunca se guarda el PDF en
+// disco. Requiere que la historia ya tenga al menos un guardado (borrador o
+// finalizada); si el especialista todavía no ha escrito nada, no tiene
+// sentido descargar un PDF vacío.
+async function descargarHistoriaClinicaPdf(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const cita = await miCitaConPaciente(especialista.id, req.params.id);
+
+    const hc = await HistoriaClinica.findOne({ where: { cita_id: cita.id } });
+    if (!hc) throw new HttpError(404, 'Esta cita todavía no tiene historia clínica registrada.');
+
+    const usuarioEspecialista = await Usuario.findByPk(req.user.id, { attributes: ['nombre'] });
+
+    const pdfBuffer = await generarHistoriaClinicaPdf({
+      paciente: cita.Colaborador?.Usuario?.nombre || 'Paciente',
+      especialistaNombre: usuarioEspecialista?.nombre || 'Especialista',
+      especialidad: especialista.especialidad,
+      citaFecha: cita.fecha_hora,
+      historia: hc,
+    });
+
+    await registrarAuditoria({ req, accion: 'descargar_historia_clinica_pdf', entidad: 'historias_clinicas', entidadId: hc.id });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="historia-clinica-cita-${cita.id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Sube un adjunto (resultado de laboratorio, escaneo, soporte) a la
+// historia clínica de una cita. Reutiliza exactamente el mismo middleware
+// de subida que el expediente del colaborador (middlewares/upload.js: solo
+// PDF/PNG/JPG, nombre en disco generado por el servidor). Solo se puede
+// adjuntar mientras la nota siga en 'borrador' o recién creada junto con
+// ella — una historia 'finalizada'/'anulada' no admite adjuntos nuevos,
+// mismo criterio de inalterabilidad que el resto de la nota.
+async function subirAdjuntoHistoria(req, res, next) {
+  try {
+    if (!req.file) throw new HttpError(400, 'No se recibió ningún archivo.');
+
+    const especialista = await miEspecialista(req.user.id);
+    const cita = await miCitaConPaciente(especialista.id, req.params.id);
+    const hc = await HistoriaClinica.findOne({ where: { cita_id: cita.id } });
+    if (!hc) {
+      fs.unlinkSync(req.file.path);
+      throw new HttpError(404, 'Primero debes guardar un borrador de la historia clínica antes de adjuntar archivos.');
+    }
+    if (hc.estado !== 'borrador') {
+      fs.unlinkSync(req.file.path);
+      throw new HttpError(409, 'Esta historia clínica ya no admite adjuntos nuevos (no está en borrador).');
+    }
+
+    const adjunto = await HistoriaClinicaAdjunto.create({
+      historia_clinica_id: hc.id,
+      nombre_original: req.file.originalname.slice(0, 255),
+      ruta_almacenamiento: req.file.path,
+      mime_type: req.file.mimetype,
+      tamano_bytes: req.file.size,
+      subido_por: req.user.id,
+    });
+
+    await registrarAuditoria({ req, accion: 'subir_adjunto_historia_clinica', entidad: 'historia_clinica_adjuntos', entidadId: adjunto.id });
+    res.status(201).json({ data: adjunto });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Revalida siempre dueño + pertenencia (el adjunto debe colgar de una
+// historia clínica de ESTE especialista) antes de servir o tocar un
+// archivo — mismo patrón que expedienteController.documentoAccesible.
+async function miAdjuntoHistoria(especialistaId, citaId, adjuntoId) {
+  const cita = await Cita.findOne({ where: { id: citaId, especialista_id: especialistaId } });
+  if (!cita) throw new HttpError(404, 'Cita no encontrada.');
+  const hc = await HistoriaClinica.findOne({ where: { cita_id: cita.id } });
+  if (!hc) throw new HttpError(404, 'Esta cita no tiene historia clínica.');
+  const adjunto = await HistoriaClinicaAdjunto.findOne({ where: { id: adjuntoId, historia_clinica_id: hc.id, activo: true } });
+  if (!adjunto) throw new HttpError(404, 'Adjunto no encontrado.');
+  return { hc, adjunto };
+}
+
+async function descargarAdjuntoHistoria(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const { adjunto } = await miAdjuntoHistoria(especialista.id, req.params.id, req.params.adjuntoId);
+    if (!fs.existsSync(adjunto.ruta_almacenamiento)) throw new HttpError(404, 'El archivo ya no está disponible en el almacenamiento.');
+
+    await registrarAuditoria({ req, accion: 'descargar_adjunto_historia_clinica', entidad: 'historia_clinica_adjuntos', entidadId: adjunto.id });
+    res.setHeader('Content-Type', adjunto.mime_type);
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(adjunto.nombre_original)}"`);
+    res.sendFile(path.resolve(adjunto.ruta_almacenamiento));
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function eliminarAdjuntoHistoria(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const { hc, adjunto } = await miAdjuntoHistoria(especialista.id, req.params.id, req.params.adjuntoId);
+    if (hc.estado !== 'borrador') throw new HttpError(409, 'Esta historia clínica ya no admite cambios en sus adjuntos.');
+
+    await adjunto.update({ activo: false });
+    await registrarAuditoria({ req, accion: 'eliminar_adjunto_historia_clinica', entidad: 'historia_clinica_adjuntos', entidadId: adjunto.id });
+    res.json({ data: { ok: true } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// PDF consolidado: TODAS las sesiones finalizadas de UN paciente con ESTE
+// especialista, en un solo documento — a diferencia de
+// descargarHistoriaClinicaPdf (una sola cita), este concentra más
+// información sensible en un solo archivo, así que deliberadamente solo
+// incluye sesiones 'finalizada' (nunca borradores a medio escribir ni
+// notas anuladas).
+async function descargarHistorialConsolidadoPdf(req, res, next) {
+  try {
+    const especialista = await miEspecialista(req.user.id);
+    const colaborador = await Colaborador.findOne({
+      where: { id: req.params.colaboradorId },
+      include: [{ model: Usuario, attributes: ['nombre'] }],
+    });
+    if (!colaborador) throw new HttpError(404, 'Paciente no encontrado.');
+
+    const sesiones = await HistoriaClinica.findAll({
+      where: { colaborador_id: colaborador.id, especialista_id: especialista.id, estado: 'finalizada' },
+      include: [{ model: Cita, attributes: ['fecha_hora'] }],
+      order: [['finalizada_en', 'ASC']],
+    });
+    if (sesiones.length === 0) throw new HttpError(404, 'Este paciente todavía no tiene historias clínicas finalizadas con vos.');
+
+    const usuarioEspecialista = await Usuario.findByPk(req.user.id, { attributes: ['nombre'] });
+
+    const pdfBuffer = await generarHistoriaClinicaConsolidadaPdf({
+      paciente: colaborador.Usuario?.nombre || 'Paciente',
+      especialistaNombre: usuarioEspecialista?.nombre || 'Especialista',
+      especialidad: especialista.especialidad,
+      sesiones,
+    });
+
+    await registrarAuditoria({ req, accion: 'descargar_historial_consolidado_pdf', entidad: 'historias_clinicas', entidadId: colaborador.id });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="historial-clinico-paciente-${colaborador.id}.pdf"`);
+    res.send(pdfBuffer);
   } catch (err) {
     next(err);
   }
@@ -554,6 +743,11 @@ module.exports = {
   marcarCompletada,
   historiaClinica,
   guardarHistoriaClinica,
+  descargarHistoriaClinicaPdf,
+  subirAdjuntoHistoria,
+  descargarAdjuntoHistoria,
+  eliminarAdjuntoHistoria,
+  descargarHistorialConsolidadoPdf,
   ingresos,
   exportarIngresos,
   exportarCitas,

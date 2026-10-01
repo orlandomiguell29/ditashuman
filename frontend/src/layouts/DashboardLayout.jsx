@@ -26,7 +26,8 @@ const MENUS = {
       items: [
         { to: '/especialista/dashboard', label: 'Dashboard' },
         { to: '/especialista/agenda', label: 'Mi Agenda y Horarios' },
-        { to: '/especialista/ingresos', label: 'Historial de Cuentas' },
+        { to: '/especialista/historial-clinico', label: 'Historial Clínico' },
+        { to: '/especialista/ingresos', label: 'Mis Ingresos' },
       ],
     },
   ],
@@ -68,6 +69,7 @@ const MENUS = {
         { to: '/admin/roles', label: 'Roles y Permisos' },
         { to: '/admin/especialistas', label: 'Especialistas (marketplace)' },
         { to: '/admin/comisiones', label: 'Comisiones' },
+        { to: '/admin/historias-clinicas', label: 'Historias Clínicas' },
         { to: '/admin/integraciones', label: 'Integraciones (Google Meet)' },
         { to: '/admin/auditoria', label: 'Logs del Sistema' },
       ],

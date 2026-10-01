@@ -119,6 +119,30 @@ async function repararEsquema() {
   // Duración de reunión parametrizable por especialista (antes fija en 60
   // minutos, hardcodeada en frontend y backend). Ver models/index.js.
   await asegurarColumna('especialistas', 'duracion_minutos', 'duracion_minutos SMALLINT UNSIGNED NOT NULL DEFAULT 60');
+
+  // Corrección administrativa de historias clínicas (anular con motivo,
+  // nunca borrar). `historias_clinicas` ya existía en producción antes de
+  // que estas 3 columnas se agregaran al modelo, así que necesitan su
+  // propio `asegurarColumna` explícito (igual que el resto de esta
+  // función) — `sequelize.sync({ alter: false })` arriba solo crea tablas
+  // NUEVAS, nunca agrega columnas a una que ya existe.
+  await asegurarColumna('historias_clinicas', 'anulada_motivo', 'anulada_motivo TEXT NULL');
+  await asegurarColumna('historias_clinicas', 'anulada_por_id', 'anulada_por_id BIGINT UNSIGNED NULL');
+  await asegurarColumna('historias_clinicas', 'anulada_en', 'anulada_en DATETIME NULL');
+  // El ENUM de `estado` sí necesita ampliarse (ahora admite 'anulada'), y
+  // eso no es agregar una columna sino MODIFICARLA — asegurarColumna no
+  // sirve aquí. Se hace con un MODIFY COLUMN explícito, seguro de correr en
+  // cada arranque: si el enum ya incluye 'anulada', es un no-op real (MySQL
+  // no se queja de "modificar" una columna a la misma definición que ya tiene).
+  try {
+    if (await tablaExiste('historias_clinicas')) {
+      await sequelize.query(
+        "ALTER TABLE `historias_clinicas` MODIFY COLUMN `estado` ENUM('borrador','finalizada','anulada') NOT NULL DEFAULT 'borrador'"
+      );
+    }
+  } catch (err) {
+    logger.error('[autoRepair] No fue posible ampliar historias_clinicas.estado', { error: err.message });
+  }
 }
 
 async function autoRepararTodo() {

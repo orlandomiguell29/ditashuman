@@ -23,6 +23,7 @@ import EmpresaClima from './pages/empresa/Clima';
 
 import EspecialistaDashboard from './pages/especialista/Dashboard';
 import EspecialistaAgenda from './pages/especialista/Agenda';
+import EspecialistaHistorialClinico from './pages/especialista/HistorialClinico';
 import EspecialistaIngresos from './pages/especialista/Ingresos';
 
 import AdminDashboard from './pages/admin/Dashboard';
@@ -37,6 +38,7 @@ import AdminEspecialistas from './pages/admin/Especialistas';
 import AdminComisiones from './pages/admin/Comisiones';
 import AdminIntegraciones from './pages/admin/Integraciones';
 import AdminAuditoria from './pages/admin/Auditoria';
+import AdminHistoriasClinicas from './pages/admin/HistoriasClinicas';
 
 function InicioPorRol() {
   const { usuario } = useAuth();
@@ -80,6 +82,7 @@ export default function App() {
           <Route element={<ProtectedRoute rolesPermitidos={['ESPECIALISTA']} />}>
             <Route path="/especialista/dashboard" element={<EspecialistaDashboard />} />
             <Route path="/especialista/agenda" element={<EspecialistaAgenda />} />
+            <Route path="/especialista/historial-clinico" element={<EspecialistaHistorialClinico />} />
             <Route path="/especialista/ingresos" element={<EspecialistaIngresos />} />
           </Route>
 
@@ -106,6 +109,7 @@ export default function App() {
             <Route path="/admin/comisiones" element={<AdminComisiones />} />
             <Route path="/admin/integraciones" element={<AdminIntegraciones />} />
             <Route path="/admin/auditoria" element={<AdminAuditoria />} />
+            <Route path="/admin/historias-clinicas" element={<AdminHistoriasClinicas />} />
           </Route>
         </Route>
       </Route>

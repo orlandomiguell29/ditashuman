@@ -3,6 +3,7 @@ const ctrl = require('../controllers/especialistaController');
 const { requireAuth } = require('../middlewares/auth');
 const { requirePermission } = require('../middlewares/rbac');
 const { validate } = require('../middlewares/validate');
+const { upload } = require('../middlewares/upload');
 
 const router = Router();
 router.use(requireAuth, requirePermission('especialistas.leer'));
@@ -30,6 +31,31 @@ router.put(
   requirePermission('historias_clinicas.actualizar'),
   validate(ctrl.historiaClinicaSchema),
   ctrl.guardarHistoriaClinica
+);
+router.get('/citas/:id/historia-clinica/pdf', requirePermission('historias_clinicas.leer'), ctrl.descargarHistoriaClinicaPdf);
+router.post(
+  '/citas/:id/historia-clinica/adjuntos',
+  requirePermission('historias_clinicas.actualizar'),
+  upload.single('archivo'),
+  ctrl.subirAdjuntoHistoria
+);
+router.get(
+  '/citas/:id/historia-clinica/adjuntos/:adjuntoId',
+  requirePermission('historias_clinicas.leer'),
+  ctrl.descargarAdjuntoHistoria
+);
+router.delete(
+  '/citas/:id/historia-clinica/adjuntos/:adjuntoId',
+  requirePermission('historias_clinicas.actualizar'),
+  ctrl.eliminarAdjuntoHistoria
+);
+// PDF consolidado de TODAS las sesiones finalizadas de un paciente con
+// este especialista — vive bajo /pacientes (no /citas) porque no está
+// atado a una sola cita, sino a la relación especialista-paciente.
+router.get(
+  '/pacientes/:colaboradorId/historial-pdf',
+  requirePermission('historias_clinicas.leer'),
+  ctrl.descargarHistorialConsolidadoPdf
 );
 router.get('/ingresos', ctrl.ingresos);
 router.get('/ingresos/export', requirePermission('comisiones.exportar'), ctrl.exportarIngresos);

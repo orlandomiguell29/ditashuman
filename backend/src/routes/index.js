@@ -22,6 +22,7 @@ router.use('/empresa', require('./empresaRoutes'));
 router.use('/admin/integraciones', require('./integracionesRoutes'));
 router.use('/admin/dashboard', require('./adminDashboardRoutes'));
 router.use('/admin/auditoria', require('./auditoriaRoutes'));
+router.use('/admin/historias-clinicas', require('./historiasClinicasAdminRoutes'));
 
 // `/health` hace una consulta real a MySQL (no solo responde "ok" desde el
 // propio servidor) a propósito: además de confirmar que el backend está
