@@ -213,6 +213,12 @@ export default function EspecialistaHistorialClinico() {
                 <div><span>En borrador</span><strong>{paciente.notasBorrador}</strong></div>
               </div>
 
+              {paciente.notasFinalizadas === 0 && (
+                <p className="hc-aviso">
+                  El historial completo en PDF se habilita cuando este paciente tenga al menos una historia clínica
+                  <strong> finalizada</strong>. Abre una sesión con “Diligenciar”, completa la nota y pulsa “Finalizar historia clínica”.
+                </p>
+              )}
               {errorConsolidado && <div className="alert-error" style={{ margin: '14px 22px 0' }}>{errorConsolidado}</div>}
 
               <ul className="hc-sesiones">
