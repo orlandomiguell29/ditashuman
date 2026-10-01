@@ -230,6 +230,19 @@ textarea:focus-visible, [tabindex]:focus-visible {
 [data-tooltip]:hover::before, [data-tooltip]:focus-visible::before {
   opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
 }
+/* Un globo invisible (opacity: 0 / visibility: hidden) sigue contando para
+   el área de scroll del contenedor. Dentro de las tablas (.table-wrapper
+   tiene overflow-x: auto), el globo oculto del último botón de la derecha
+   se salía del borde y hacía aparecer una barra de scroll horizontal aunque
+   todo el contenido visible cupiera. Mientras no se usa, no existe. */
+[data-tooltip]:not(:hover):not(:focus-visible)::after,
+[data-tooltip]:not(:hover):not(:focus-visible)::before { display: none; }
+/* En la columna de acciones (pegada al borde derecho de la tabla) el globo
+   se alinea al borde derecho del botón y crece hacia adentro, para que
+   tampoco se salga al pasar el mouse. */
+.acciones-td [data-tooltip]::after { left: auto; right: 0; transform: translateY(4px); }
+.acciones-td [data-tooltip]:hover::after,
+.acciones-td [data-tooltip]:focus-visible::after { transform: translateY(0); }
 
 /* Checkboxes/radios modernos sin dependencias: `accent-color` es soportado
    por todos los navegadores actuales y reemplaza el checkbox cuadrado gris
